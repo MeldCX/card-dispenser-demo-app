@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://storage.googleapis.com/assets.meld.cx/agent/1.0.42/Agent.js"></script>
+    <link rel="stylesheet" href="bootstrap.min.css">
+    <title>Document</title>
+</head>
+
+<body>
+    <div class="container mt-5">
+        <div class="row">
+            <div class="d-flex justify-content-center mb-5">
+                <h1 class="display-5">Card Dispenser Demo App</h1>
+            </div>
+            <div class="col-3 border rounded-3 m-1 p-3">
+                <div class="mb-5">
+                    <label class="fs-5 form-label" for="sample-text">Enter the text you want to write on the card. It
+                        will
+                        write the text before ejecting. Max 16 characters.</label>
+                    <input type="text" class="form-control" id="sample-text" maxlength="16"
+                        placeholder="Enter text here...">
+                </div>
+                <div id="options">
+                    <p class="fs-5">Select an option:</p>
+                    <div class="d-grid gap-2 mx-auto">
+                        <button id="eject-button" type="button" class="btn btn-primary btn-lg mb-2">GET CARD</button>
+                        <button id="collect-button" type="button" class="btn btn-primary btn-lg mb-2">RETURN
+                            CARD</button>
+                    </div>
+                </div>
+            </div>
+            <div class="col-8 ms-4">
+                <b class="fs-3">Dispenser status:</b>
+                <p class="fs-4" id="status">Waiting for dispenser</p>
+                <b class="fs-3">Read data:</b>
+                <p class="fs-4" id="content"></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+
+        const DEFAULT_KEY_A = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+        const DISPENSER_READY = 'Dispenser Ready. Please select an option.';
+
+        const getButton = document.getElementById('eject-button');
+        const returnButton = document.getElementById('collect-button');
+        const content = document.getElementById('content');
+        const status = document.getElementById('status');
+
+
+        const agent = window.Agent;
+
+        agent.onReady(() => {
+
+            status.innerText = DISPENSER_READY;
+
+            const checkDispenserStatus = async () => {
+                const response = await agent.Peripherals.Dispenser.checkMachinePresentBasicStatus();
+                return response.st0.code;
+            };
+
+            const checkBinStatus = async () => {
+                const response = await agent.Peripherals.Dispenser.checkMachinePresentBasicStatus();
+                return response.st1.code;
+            };
+
+
+            const getCard = async () => {
+                try {
+                    content.innerText = '';
+                    const stringTest = document.getElementById('sample-text').value;
+                    let encodedData = new TextEncoder().encode(stringTest);
+
+                    returnButton.disabled = true;
+                    getButton.disabled = true;
+
+
+                    if (await checkBinStatus() === '0') {
+                        status.innerText = 'Card bin is empty. Please load cards into the bin';
+                        setTimeout(() => {
+                            status.innerText = DISPENSER_READY;
+                            returnButton.disabled = false;
+                            getButton.disabled = false;
+                        }, 5000);
+                        throw new Error('Card bin is empty');
+                    }
+
+                    if (await checkDispenserStatus() === '0') {
+                        await agent.Peripherals.Dispenser.moveCardFromBin();
+                        const activated = await agent.Peripherals.Dispenser.activateRFID();
+
+                        if (activated.cardType.code === '1K' || '4K') {
+                            const authResponse = await agent.Peripherals.Dispenser.authenticate({
+                                keyNumber: 0x0,
+                                sectorNumber: 0x1,
+                                keyData: DEFAULT_KEY_A,
+                            });
+
+                            if (authResponse.RFIDCommandResult.code === '6f00') {
+                                status.innerText = 'Authentication failed. Returning card to bin';
+                                const collectStatus = await agent.Peripherals.Dispenser.collectCardIntoCollectBin();
+                                if (collectStatus) {
+                                    status.innerText = DISPENSER_READY;
+                                    returnButton.disabled = false;
+                                    getButton.disabled = false;
+                                    throw new Error(authResponse.RFIDCommandResult.code);
+                                }
+                            }
+
+                            status.innerText = 'Writing to card...';
+
+                            writeResponse = await agent.Peripherals.Dispenser.writeSectorBlock({
+                                sectorNumber: 0x1,
+                                startBlock: 0x0,
+                                numberOfBlocks: 0x1,
+                                payload: encodedData
+                            });
+
+                            await agent.Peripherals.Dispenser.deactivateRFID();
+
+                            if (writeResponse.RFIDCommandResult.code === '9000') {
+                                status.innerText = 'Write Success!';
+                                const dropStatus = await agent.Peripherals.Dispenser.moveCardToPortDrop();
+                                if (dropStatus) {
+                                    await agent.Peripherals.Dispenser.forbidCardInFromPort();
+                                    status.innerText = DISPENSER_READY;
+                                    returnButton.disabled = false;
+                                    getButton.disabled = false;
+                                }
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.warn(error);
+                }
+            };
+
+            const returnCard = async () => {
+                try {
+                    content.innerText = '';
+                    returnButton.disabled = true;
+                    getButton.disabled = true;
+                    await agent.Peripherals.Dispenser.allowCardInFromPort();
+
+                    while (await checkDispenserStatus() !== '2') {
+                        status.innerText = 'Waiting for card to be inserted in the port.';
+                    }
+
+                    if (await checkDispenserStatus() === '2') {
+                        status.innerText = 'Reading card data...';
+                        await agent.Peripherals.Dispenser.activateRFID();
+
+                        let authResponse = await agent.Peripherals.Dispenser.authenticate({
+                            keyNumber: 0x0,
+                            sectorNumber: 0x1,
+                            keyData: DEFAULT_KEY_A
+                        });
+
+                        if (authResponse.RFIDCommandResult.code === '6f00') {
+                            status.innerText = 'Authentication failed. Ejecting card.';
+
+                            //drop only the card if auth failed when returning
+                            if (await checkDispenserStatus() === '2') {
+                                const dropStatus = await agent.Peripherals.Dispenser.moveCardToPortDrop();
+                                await agent.Peripherals.Dispenser.forbidCardInFromPort();
+                                if (dropStatus) {
+                                    status.innerText = DISPENSER_READY;
+                                    returnButton.disabled = false;
+                                    getButton.disabled = false;
+                                    throw new Error(authResponse.RFIDCommandResult.code);
+                                }
+                            }
+                        }
+
+                        let readResponse = await agent.Peripherals.Dispenser.readSectorBlock({
+                            sectorNumber: 0x1,
+                            startBlock: 0x0,
+                            numberOfBlocks: 0x1,
+                        });
+
+                        await agent.Peripherals.Dispenser.deactivateRFID();
+
+                        const textDecoder = new TextDecoder();
+                        console.log(readResponse.Payload);
+                        let decodedData = textDecoder.decode(new Uint8Array(readResponse.Payload));
+                        content.innerText = decodedData;
+
+                        if (readResponse.RFIDCommandResult.code === '9000') {
+                            await agent.Peripherals.Dispenser.collectCardIntoCollectBin();
+                            status.innerText = DISPENSER_READY;
+                            returnButton.disabled = false;
+                            getButton.disabled = false;
+                        }
+                    }
+                } catch (error) {
+                    console.warn(error);
+                }
+            };
+
+            getButton.onclick = () => getCard();
+            returnButton.onclick = () => returnCard();
+        })
+
+    </script>
+</body>
+
+</html>
