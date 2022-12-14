@@ -146,20 +146,25 @@
                     getButton.disabled = true;
                     await agent.Peripherals.Dispenser.allowCardInFromPort();
 
+                    const sleep = timeout => new Promise(resolve => setTimeout(resolve, timeout));
+
                     let keepWaiting = true;
 
-                    setTimeout(async () => {
+                    setTimeout(() => {
                         keepWaiting = false;
-                        await agent.Peripherals.Dispenser.forbidCardInFromPort();
-                        if (await checkDispenserStatus() !== '2') {
-                            status.innerText = DISPENSER_READY;
-                        }
-                        returnButton.disabled = false;
-                        getButton.disabled = false;
-                    }, 10000);
+                    }, 8000);
 
                     while (await checkDispenserStatus() !== '2' && keepWaiting) {
                         status.innerText = 'Waiting for card to be inserted in the port.';
+                        await sleep(500);
+                    }
+
+                    //executed after while loop condition is not met
+                    if (!keepWaiting) {
+                        await agent.Peripherals.Dispenser.forbidCardInFromPort();
+                        status.innerText = DISPENSER_READY;
+                        returnButton.disabled = false;
+                        getButton.disabled = false;
                     }
 
                     if (await checkDispenserStatus() === '2') {
@@ -203,6 +208,7 @@
 
                         if (readResponse.RFIDCommandResult.code === '9000') {
                             await agent.Peripherals.Dispenser.collectCardIntoCollectBin();
+                            await agent.Peripherals.Dispenser.forbidCardInFromPort();
                             status.innerText = DISPENSER_READY;
                             returnButton.disabled = false;
                             getButton.disabled = false;
