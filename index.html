@@ -52,7 +52,6 @@
         const content = document.getElementById('content');
         const status = document.getElementById('status');
 
-
         const agent = window.Agent;
 
         agent.onReady(() => {
@@ -74,7 +73,7 @@
                 try {
                     content.innerText = '';
                     const stringTest = document.getElementById('sample-text').value;
-                    let encodedData = new TextEncoder().encode(stringTest);
+                    let encodedData = new TextEncoder().encode(stringTest.padEnd(16));
 
                     returnButton.disabled = true;
                     getButton.disabled = true;
@@ -147,7 +146,19 @@
                     getButton.disabled = true;
                     await agent.Peripherals.Dispenser.allowCardInFromPort();
 
-                    while (await checkDispenserStatus() !== '2') {
+                    let keepWaiting = true;
+
+                    setTimeout(async () => {
+                        keepWaiting = false;
+                        await agent.Peripherals.Dispenser.forbidCardInFromPort();
+                        if (await checkDispenserStatus() !== '2') {
+                            status.innerText = DISPENSER_READY;
+                        }
+                        returnButton.disabled = false;
+                        getButton.disabled = false;
+                    }, 10000);
+
+                    while (await checkDispenserStatus() !== '2' && keepWaiting) {
                         status.innerText = 'Waiting for card to be inserted in the port.';
                     }
 
