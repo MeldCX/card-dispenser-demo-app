@@ -68,6 +68,11 @@
                 return response.st1.code;
             };
 
+            const enableButtons = () => {
+                status.innerText = DISPENSER_READY;
+                returnButton.disabled = false;
+                getButton.disabled = false;
+            };
 
             const getCard = async () => {
                 try {
@@ -78,13 +83,10 @@
                     returnButton.disabled = true;
                     getButton.disabled = true;
 
-
                     if (await checkBinStatus() === '0') {
                         status.innerText = 'Card bin is empty. Please load cards into the bin';
                         setTimeout(() => {
-                            status.innerText = DISPENSER_READY;
-                            returnButton.disabled = false;
-                            getButton.disabled = false;
+                            enableButtons();
                         }, 5000);
                         throw new Error('Card bin is empty');
                     }
@@ -104,9 +106,7 @@
                                 status.innerText = 'Authentication failed. Returning card to bin';
                                 const collectStatus = await agent.Peripherals.Dispenser.collectCardIntoCollectBin();
                                 if (collectStatus) {
-                                    status.innerText = DISPENSER_READY;
-                                    returnButton.disabled = false;
-                                    getButton.disabled = false;
+                                    enableButtons();
                                     throw new Error(authResponse.RFIDCommandResult.code);
                                 }
                             }
@@ -127,9 +127,7 @@
                                 const dropStatus = await agent.Peripherals.Dispenser.moveCardToPortDrop();
                                 if (dropStatus) {
                                     await agent.Peripherals.Dispenser.forbidCardInFromPort();
-                                    status.innerText = DISPENSER_READY;
-                                    returnButton.disabled = false;
-                                    getButton.disabled = false;
+                                    enableButtons();
                                 }
                             }
                         }
@@ -162,9 +160,7 @@
                     //executed after while loop condition is not met
                     if (!keepWaiting) {
                         await agent.Peripherals.Dispenser.forbidCardInFromPort();
-                        status.innerText = DISPENSER_READY;
-                        returnButton.disabled = false;
-                        getButton.disabled = false;
+                        enableButtons();
                     }
 
                     if (await checkDispenserStatus() === '2') {
@@ -185,9 +181,7 @@
                                 const dropStatus = await agent.Peripherals.Dispenser.moveCardToPortDrop();
                                 await agent.Peripherals.Dispenser.forbidCardInFromPort();
                                 if (dropStatus) {
-                                    status.innerText = DISPENSER_READY;
-                                    returnButton.disabled = false;
-                                    getButton.disabled = false;
+                                    enableButtons();
                                     throw new Error(authResponse.RFIDCommandResult.code);
                                 }
                             }
@@ -209,9 +203,7 @@
                         if (readResponse.RFIDCommandResult.code === '9000') {
                             await agent.Peripherals.Dispenser.collectCardIntoCollectBin();
                             await agent.Peripherals.Dispenser.forbidCardInFromPort();
-                            status.innerText = DISPENSER_READY;
-                            returnButton.disabled = false;
-                            getButton.disabled = false;
+                            enableButtons()
                         }
                     }
                 } catch (error) {
