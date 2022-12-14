@@ -52,7 +52,6 @@
         const content = document.getElementById('content');
         const status = document.getElementById('status');
 
-
         const agent = window.Agent;
 
         agent.onReady(() => {
@@ -69,23 +68,25 @@
                 return response.st1.code;
             };
 
+            const enableButtons = () => {
+                status.innerText = DISPENSER_READY;
+                returnButton.disabled = false;
+                getButton.disabled = false;
+            };
 
             const getCard = async () => {
                 try {
                     content.innerText = '';
                     const stringTest = document.getElementById('sample-text').value;
-                    let encodedData = new TextEncoder().encode(stringTest);
+                    let encodedData = new TextEncoder().encode(stringTest.padEnd(16));
 
                     returnButton.disabled = true;
                     getButton.disabled = true;
 
-
                     if (await checkBinStatus() === '0') {
                         status.innerText = 'Card bin is empty. Please load cards into the bin';
                         setTimeout(() => {
-                            status.innerText = DISPENSER_READY;
-                            returnButton.disabled = false;
-                            getButton.disabled = false;
+                            enableButtons();
                         }, 5000);
                         throw new Error('Card bin is empty');
                     }
@@ -105,9 +106,7 @@
                                 status.innerText = 'Authentication failed. Returning card to bin';
                                 const collectStatus = await agent.Peripherals.Dispenser.collectCardIntoCollectBin();
                                 if (collectStatus) {
-                                    status.innerText = DISPENSER_READY;
-                                    returnButton.disabled = false;
-                                    getButton.disabled = false;
+                                    enableButtons();
                                     throw new Error(authResponse.RFIDCommandResult.code);
                                 }
                             }
@@ -128,9 +127,7 @@
                                 const dropStatus = await agent.Peripherals.Dispenser.moveCardToPortDrop();
                                 if (dropStatus) {
                                     await agent.Peripherals.Dispenser.forbidCardInFromPort();
-                                    status.innerText = DISPENSER_READY;
-                                    returnButton.disabled = false;
-                                    getButton.disabled = false;
+                                    enableButtons();
                                 }
                             }
                         }
@@ -147,8 +144,23 @@
                     getButton.disabled = true;
                     await agent.Peripherals.Dispenser.allowCardInFromPort();
 
-                    while (await checkDispenserStatus() !== '2') {
+                    const sleep = timeout => new Promise(resolve => setTimeout(resolve, timeout));
+
+                    let keepWaiting = true;
+
+                    setTimeout(() => {
+                        keepWaiting = false;
+                    }, 8000);
+
+                    while (await checkDispenserStatus() !== '2' && keepWaiting) {
                         status.innerText = 'Waiting for card to be inserted in the port.';
+                        await sleep(500);
+                    }
+
+                    //executed after while loop condition is not met
+                    if (!keepWaiting) {
+                        await agent.Peripherals.Dispenser.forbidCardInFromPort();
+                        enableButtons();
                     }
 
                     if (await checkDispenserStatus() === '2') {
@@ -169,9 +181,7 @@
                                 const dropStatus = await agent.Peripherals.Dispenser.moveCardToPortDrop();
                                 await agent.Peripherals.Dispenser.forbidCardInFromPort();
                                 if (dropStatus) {
-                                    status.innerText = DISPENSER_READY;
-                                    returnButton.disabled = false;
-                                    getButton.disabled = false;
+                                    enableButtons();
                                     throw new Error(authResponse.RFIDCommandResult.code);
                                 }
                             }
@@ -192,9 +202,8 @@
 
                         if (readResponse.RFIDCommandResult.code === '9000') {
                             await agent.Peripherals.Dispenser.collectCardIntoCollectBin();
-                            status.innerText = DISPENSER_READY;
-                            returnButton.disabled = false;
-                            getButton.disabled = false;
+                            await agent.Peripherals.Dispenser.forbidCardInFromPort();
+                            enableButtons()
                         }
                     }
                 } catch (error) {
